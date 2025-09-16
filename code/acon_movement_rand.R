@@ -3,7 +3,7 @@ lapply(list("rstudioapi","lubridate","tidyverse","adehabitatHR", "sf", "glmmTMB"
             "effects","ggplot2","patchwork","mapview","amt"),require,character.only=TRUE)
 
 ####change working directory####
-current_path<-getActiveDocumentContext()$path
+current_path<-dirname(getActiveDocumentContext()$path)
 setwd(dirname(current_path))
 
 set.seed(1234)
@@ -11,6 +11,12 @@ set.seed(1234)
 ####generate random location data####
 #load study area polygon
 rand_area<-st_read("GIS_Data/PV_MCP.shp")
+
+#load anthropogenic features
+trails<-st_read("GIS_Data/foottrails.shp")
+roads<-st_read("GIS_data/roads_TIGER_dissolve.shp")
+roads.poly<-st_read("GIS_data/roadside_buffer_poly.shp")
+powerlines_poly<-st_read("GIS_data/powerlines_poly.shp")
 
 #generate snake info
 snakes_tracked = 14
@@ -994,7 +1000,7 @@ AppIII_Fig4_LOOCV.point.female.plot<-ggplot(LOOCV_point_long_id_female,aes(x=fac
     "powerlines_poly_LOOCV"="Powerline Residence",
     "road_residence_LOOCV"="Location Within\n5m of Road"))+
   ylab(bquote(italic(P[i])))+
-  annotate("text",label="♀",x=4.3,y=1*0.1,size = 10, family = "Arial Unicode MS")+
+  annotate("text", label = "♀",x = 4.3,y = 1*0.1,size = 10, family = "Arial Unicode MS")+
   theme_bw() + 
   theme(    axis.title.x = element_blank(),
             axis.title.y = element_text(family="serif", margin = margin(t = 0, r = 5, b = 0, l = 0), face = "bold", size=18, color="black", vjust=1),
@@ -1010,21 +1016,21 @@ print(AppIII_Fig4_LOOCV.point.female.plot)
 acon_ssf <- left_join(acon, acon_info %>% select(id, sex), by = "id")
 
 #create track
-track_all<-make_track(acon_ssf,x,y,date_time,id=id)
+track_all <- make_track(acon_ssf, x, y, date_time, id=id)
 
 #format year
-acon_ssf$year_id<-paste0(acon_ssf$year,acon$id)
-acon_ssf$x1<-acon_ssf$x+rnorm(length(acon$x),0,0.1)
-acon_ssf$y1<-acon_ssf$y+rnorm(length(acon$y),0,0.1)
+acon_ssf$year_id <- paste0(acon_ssf$year, acon$id)
+acon_ssf$x1 <- acon_ssf$x + rnorm(length(acon$x), 0, 0.1)
+acon_ssf$y1 <- acon_ssf$y + rnorm(length(acon$y), 0, 0.1)
 
 #make track
-acon_male<-subset(acon_ssf,sex == "male")
-track_male<-make_track(acon_male,x1,y1,date_time,id=year_id)
-track_male_nest<-track_male|>nest(data=-"id")
+acon_male <- subset(acon_ssf, sex == "male")
+track_male <- make_track(acon_male, x1, y1, date_time, id = year_id)
+track_male_nest <- track_male|>nest(data = -"id")
 
-acon_female<-subset(acon_ssf,sex == "female")
-track_female<-make_track(acon_female,x1,y1,date_time,id=year_id)
-track_female_nest<-track_female|>nest(data=-"id")
+acon_female <- subset(acon_ssf, sex == "female")
+track_female <- make_track(acon_female, x1, y1, date_time,id = year_id)
+track_female_nest <- track_female |> nest(data = -"id")
 
 #create steps
 track_male_nest_steps <- track_male_nest |> 
@@ -1036,76 +1042,76 @@ track_female_nest_steps <- track_female_nest |>
     x |> steps()))
 
 #nested randoms
-track_male_nest_steps |> unnest(cols = steps)|>random_steps(n_control=10)->track_male_nest_steps_rand
-track_female_nest_steps |> unnest(cols = steps)|>random_steps(n_control=10)->track_female_nest_steps_rand
+track_male_nest_steps |> unnest(cols = steps) |> random_steps(n_control = 10) -> track_male_nest_steps_rand
+track_female_nest_steps |> unnest(cols = steps) |> random_steps(n_control = 10) -> track_female_nest_steps_rand
 
 #remove NA values
-tracks_ssf_male<-drop_na(track_male_nest_steps_rand,x2_,y2_)
-tracks_ssf_female<-drop_na(track_female_nest_steps_rand,x2_,y2_)
+tracks_ssf_male <- drop_na(track_male_nest_steps_rand, x2_, y2_)
+tracks_ssf_female <- drop_na(track_female_nest_steps_rand, x2_, y2_)
 
 #create columns
-tracks_ssf_male$trail_crossing_count<-NA
-tracks_ssf_male$road_count<-NA
-tracks_ssf_male$powerlines_poly_count<-NA
-tracks_ssf_male$road_residence_count<-NA
+tracks_ssf_male$trail_crossing_count <- NA
+tracks_ssf_male$road_count <- NA
+tracks_ssf_male$powerlines_poly_count <- NA
+tracks_ssf_male$road_residence_count <- NA
 
 #determine whether true and random steps cross features
 for(i in 1:length(tracks_ssf_female$id)){
-  temp_line<-sfheaders::sf_linestring(obj=data.frame(x=c(tracks_ssf_female$x1_[i],tracks_ssf_female$x2_[i]),
-                                                     y=c(tracks_ssf_female$y1_[i],tracks_ssf_female$y2_[i])),
+  temp_line <- sfheaders::sf_linestring(obj = data.frame(x = c(tracks_ssf_female$x1_[i], tracks_ssf_female$x2_[i]),
+                                                     y = c(tracks_ssf_female$y1_[i], tracks_ssf_female$y2_[i])),
                                       x="x",y="y")
-  temp_point<-sfheaders::sf_point(obj=data.frame(x=tracks_ssf_female$x2_[i],y=tracks_ssf_female$y2_[i]),x="x",y="y")
-  st_crs(temp_line)<-32615
-  st_crs(temp_point)<-32615
-  tracks_ssf_female$trail_crossing_count[i]<-ifelse(length(st_geometry(st_intersection(temp_line,st_transform(trails,crs=st_crs(32615))))) > 0, 
-                                                    npts(st_intersection(temp_line,st_transform(trails,crs=st_crs(32615)))), 0)
-  tracks_ssf_female$road_count[i]<-ifelse(length(st_geometry(st_intersection(temp_line,st_transform(roads,crs=st_crs(32615))))) > 0, 
-                                          npts(st_intersection(temp_line,st_transform(roads,crs=st_crs(32615)))), 0)
-  tracks_ssf_female$powerlines_residence_count[i]<-ifelse(lengths(st_intersects(temp_point,st_transform(powerlines_poly,crs=st_crs(32615))))>0,1,0)
-  tracks_ssf_female$road_residence_count[i]<-ifelse(lengths(st_intersects(temp_point,st_transform(roads.poly,crs=st_crs(32615))))>0,1,0)
+  temp_point <- sfheaders::sf_point(obj = data.frame(x = tracks_ssf_female$x2_[i], y=tracks_ssf_female$y2_[i]), x="x", y="y")
+  st_crs(temp_line) <- 32615
+  st_crs(temp_point) <- 32615
+  tracks_ssf_female$trail_crossing_count[i] <- ifelse(length(st_geometry(st_intersection(temp_line, st_transform(trails, crs=st_crs(32615))))) > 0, 
+                                                    npts(st_intersection(temp_line,st_transform(trails, crs = st_crs(32615)))), 0)
+  tracks_ssf_female$road_count[i] <- ifelse(length(st_geometry(st_intersection(temp_line, st_transform(roads,crs = st_crs(32615))))) > 0, 
+                                          npts(st_intersection(temp_line,st_transform(roads, crs = st_crs(32615)))), 0)
+  tracks_ssf_female$powerlines_residence_count[i] <- ifelse(lengths(st_intersects(temp_point, st_transform(powerlines_poly,crs = st_crs(32615)))) > 0, 1, 0)
+  tracks_ssf_female$road_residence_count[i] <- ifelse(lengths(st_intersects(temp_point, st_transform(roads.poly, crs = st_crs(32615)))) > 0, 1, 0)
 }
 
 for(i in 1:length(tracks_ssf_male$id)){
-  temp_line<-sfheaders::sf_linestring(obj=data.frame(x=c(tracks_ssf_male$x1_[i],tracks_ssf_male$x2_[i]),
-                                                     y=c(tracks_ssf_male$y1_[i],tracks_ssf_male$y2_[i])),
+  temp_line<-sfheaders::sf_linestring(obj = data.frame(x = c(tracks_ssf_male$x1_[i], tracks_ssf_male$x2_[i]),
+                                                     y = c(tracks_ssf_male$y1_[i], tracks_ssf_male$y2_[i])),
                                       x="x",y="y")
-  temp_point<-sfheaders::sf_point(obj=data.frame(x=tracks_ssf_male$x2_[i],y=tracks_ssf_male$y2_[i]),x="x",y="y")
-  st_crs(temp_line)<-32615
-  st_crs(temp_point)<-32615
-  tracks_ssf_male$trail_crossing_count[i]<-ifelse(length(st_geometry(st_intersection(temp_line,st_transform(trails,crs=st_crs(32615))))) > 0, 
-                                                  npts(st_intersection(temp_line,st_transform(trails,crs=st_crs(32615)))), 0)
-  tracks_ssf_male$road_count[i]<-ifelse(length(st_geometry(st_intersection(temp_line,st_transform(roads,crs=st_crs(32615))))) > 0, 
-                                        npts(st_intersection(temp_line,st_transform(roads,crs=st_crs(32615)))), 0)
-  tracks_ssf_male$powerlines_residence_count[i]<-ifelse(lengths(st_intersects(temp_point,st_transform(powerlines_poly,crs=st_crs(32615))))>0,1,0)
-  tracks_ssf_male$road_residence_count[i]<-ifelse(lengths(st_intersects(temp_point,st_transform(roads.poly,crs=st_crs(32615))))>0,1,0)
+  temp_point<-sfheaders::sf_point(obj = data.frame(x = tracks_ssf_male$x2_[i], y=tracks_ssf_male$y2_[i]), x="x", y="y")
+  st_crs(temp_line) <- 32615
+  st_crs(temp_point) <- 32615
+  tracks_ssf_male$trail_crossing_count[i] <- ifelse(length(st_geometry(st_intersection(temp_line, st_transform(trails,crs = st_crs(32615))))) > 0, 
+                                                  npts(st_intersection(temp_line, st_transform(trails, crs = st_crs(32615)))), 0)
+  tracks_ssf_male$road_count[i] <- ifelse(length(st_geometry(st_intersection(temp_line,st_transform(roads,crs=st_crs(32615))))) > 0, 
+                                        npts(st_intersection(temp_line, st_transform(roads,crs = st_crs(32615)))), 0)
+  tracks_ssf_male$powerlines_residence_count[i] <- ifelse(lengths(st_intersects(temp_point, st_transform(powerlines_poly, crs = st_crs(32615)))) > 0, 1, 0)
+  tracks_ssf_male$road_residence_count[i] <- ifelse(lengths(st_intersects(temp_point, st_transform(roads.poly,crs = st_crs(32615)))) > 0, 1, 0)
 }
 
 #finalize
-tracks_ssf_final_male<-subset(tracks_ssf_male,substr(id,5,6) %in% subset(acon_info, sex == "male")$id)
+tracks_ssf_final_male <- subset(tracks_ssf_male,substr(id, 5, 6) %in% subset(acon_info, sex == "male")$id)
 
-tracks_ssf_final_female<-subset(tracks_ssf_female, substr(id,5,6) %in% subset(acon_info, sex == "female")$id)
+tracks_ssf_final_female <- subset(tracks_ssf_female, substr(id, 5, 6) %in% subset(acon_info, sex == "female")$id)
 
 #male data prep for conditional logistic regression without random effects
-d.map.male <- data.frame(case_=unique(tracks_ssf_final_male$step_id_),str_ID=1:length(unique(tracks_ssf_final_male$step_id_)))
-tracks_ssf_final_male$str_ID<-d.map.male[match(tracks_ssf_final_male$step_id_,d.map.male$case_),"str_ID"]
-tracks_ssf_final_male <- tracks_ssf_final_male[order(tracks_ssf_final_male$str_ID),]
-tracks_ssf_final_male$used<-ifelse(tracks_ssf_final_male$case_==TRUE,1,0)
-tracks_ssf_final_male$snakeid<-substr(tracks_ssf_final_male$id,1,2)
-tracks_ssf_final_male$roads_bin<-ifelse(tracks_ssf_final_male$road_count>0,1,0)
+d.map.male <- data.frame(case_=unique(tracks_ssf_final_male$step_id_), str_ID=1:length(unique(tracks_ssf_final_male$step_id_)))
+tracks_ssf_final_male$str_ID <- d.map.male[match(tracks_ssf_final_male$step_id_,d.map.male$case_), "str_ID"]
+tracks_ssf_final_male <- tracks_ssf_final_male[order(tracks_ssf_final_male$str_ID), ]
+tracks_ssf_final_male$used <- ifelse(tracks_ssf_final_male$case_==TRUE, 1, 0)
+tracks_ssf_final_male$snakeid <- substr(tracks_ssf_final_male$id, 1, 2)
+tracks_ssf_final_male$roads_bin <- ifelse(tracks_ssf_final_male$road_count > 0, 1, 0)
 
 #female data prep for conditional logistic regression without random effects
-d.map.female <- data.frame(case_=unique(tracks_ssf_final_female$step_id_),str_ID=1:length(unique(tracks_ssf_final_female$step_id_)))
-tracks_ssf_final_female$str_ID<-d.map.female[match(tracks_ssf_final_female$step_id_,d.map.female$case_),"str_ID"]
-tracks_ssf_final_female <- tracks_ssf_final_female[order(tracks_ssf_final_female$str_ID),]
-tracks_ssf_final_female$used<-ifelse(tracks_ssf_final_female$case_==TRUE,1,0)
-tracks_ssf_final_female$snakeid<-substr(tracks_ssf_final_female$id,1,2)
-tracks_ssf_final_female$roads_bin<-ifelse(tracks_ssf_final_female$road_count>0,1,0)
+d.map.female <- data.frame(case_ = unique(tracks_ssf_final_female$step_id_), str_ID=1:length(unique(tracks_ssf_final_female$step_id_)))
+tracks_ssf_final_female$str_ID <- d.map.female[match(tracks_ssf_final_female$step_id_, d.map.female$case_), "str_ID"]
+tracks_ssf_final_female <- tracks_ssf_final_female[order(tracks_ssf_final_female$str_ID), ]
+tracks_ssf_final_female$used <- ifelse(tracks_ssf_final_female$case_==TRUE, 1, 0)
+tracks_ssf_final_female$snakeid <- substr(tracks_ssf_final_female$id, 1, 2)
+tracks_ssf_final_female$roads_bin <- ifelse(tracks_ssf_final_female$road_count > 0, 1, 0)
 
 #binary mixed effects conditional logistic regression
 #male model
-tracks_ssf_final_male$trail_crossing_bin<-ifelse(tracks_ssf_final_male$trail_crossing_count>0,1,0)
-tracks_ssf_final_male$powerlines_poly_bin<-ifelse(tracks_ssf_final_male$powerlines_residence_count>0,1,0)
-tracks_ssf_final_male$road_bin<-ifelse(tracks_ssf_final_male$road_count>0,1,0)
+tracks_ssf_final_male$trail_crossing_bin<-ifelse(tracks_ssf_final_male$trail_crossing_count > 0, 1, 0)
+tracks_ssf_final_male$powerlines_poly_bin<-ifelse(tracks_ssf_final_male$powerlines_residence_count > 0, 1, 0)
+tracks_ssf_final_male$road_bin <- ifelse(tracks_ssf_final_male$road_count > 0, 1, 0)
 
 
 TMBStruc.male = glmmTMB(used ~ -1 + trail_crossing_bin + road_bin + powerlines_poly_bin +  
@@ -1125,9 +1131,9 @@ summary(glmm.TMB.bin.random.male)
 confint(glmm.TMB.bin.random.male)
 
 #female model
-tracks_ssf_final_female$trail_crossing_bin<-ifelse(tracks_ssf_final_female$trail_crossing_count>0,1,0)
-tracks_ssf_final_female$powerlines_poly_bin<-ifelse(tracks_ssf_final_female$powerlines_residence_count>0,1,0)
-tracks_ssf_final_female$road_bin<-ifelse(tracks_ssf_final_female$road_count>0,1,0)
+tracks_ssf_final_female$trail_crossing_bin <- ifelse(tracks_ssf_final_female$trail_crossing_count > 0, 1, 0)
+tracks_ssf_final_female$powerlines_poly_bin <- ifelse(tracks_ssf_final_female$powerlines_residence_count > 0, 1, 0)
+tracks_ssf_final_female$road_bin <- ifelse(tracks_ssf_final_female$road_count > 0, 1, 0)
 
 
 TMBStruc.female = glmmTMB(used ~ -1 + trail_crossing_bin + road_bin + powerlines_poly_bin +  
@@ -1186,13 +1192,13 @@ female_rss_summary_from_confint <- female_log_rss_ci_fixed %>%
 
 
 #Plot with all features combined
-all.features.male.plot<-ggplot(male_rss_summary_from_confint, aes(x=factor(feature,levels=unique(feature)),y=log(rss_estimate)))+
-  geom_point(size=2)+
-  geom_linerange(aes(ymin=log(rss_lower_ci),ymax=log(rss_upper_ci)), size = 1)+ 
-  annotate("text",label="♂",x=4.15,y=-2.5*0.85,size = 16, family = "Arial Unicode MS")+
-  scale_y_continuous(expand=c(0,0),limits=c(-3,1.5),breaks=seq(-3,1.5,0.5))+
-  scale_x_discrete()+
-  geom_hline(yintercept=0,linetype="dashed",size=1)+
+all.features.male.plot<-ggplot(male_rss_summary_from_confint, aes(x=factor(feature,levels=unique(feature)),y=log(rss_estimate))) +
+  geom_point(size=2) +
+  geom_linerange(aes(ymin=log(rss_lower_ci),ymax=log(rss_upper_ci)), size = 1) + 
+  annotate("text",label="♂",x=4.15,y=-2.5*0.85,size = 16, family = "Arial Unicode MS") +
+  scale_y_continuous(expand=c(0,0),limits=c(-3,1.5),breaks=seq(-3,1.5,0.5)) +
+  scale_x_discrete() +
+  geom_hline(yintercept=0,linetype="dashed",size=1) +
   ylab("")+
   theme_bw() + 
   theme(    axis.title.x = element_blank(),
@@ -1218,14 +1224,14 @@ male_rss_summary_from_confint %>%
   remove_rownames() -> male_rss_summary
 print(male_rss_summary)
 
-all.features.female.plot<-ggplot(female_rss_summary_from_confint, aes(x=factor(feature,levels=unique(feature)),y=log(rss_estimate)))+
-  geom_point(size=2)+
-  geom_linerange(aes(ymin=log(rss_lower_ci),ymax=log(rss_upper_ci)), size = 1)+ 
-  annotate("text",label="♀",x=4.15,y=-2.5*0.85,size = 16, family = "Arial Unicode MS")+
-  scale_y_continuous(expand=c(0,0),limits=c(-3,1.5),breaks=seq(-3,1.5,0.5))+
-  scale_x_discrete()+
-  geom_hline(yintercept=0,linetype="dashed",size=1)+
-  ylab("Log-transformed RSS")+
+all.features.female.plot<-ggplot(female_rss_summary_from_confint, aes(x=factor(feature,levels=unique(feature)),y=log(rss_estimate))) +
+  geom_point(size=2) +
+  geom_linerange(aes(ymin=log(rss_lower_ci),ymax=log(rss_upper_ci)), size = 1) + 
+  annotate("text",label="♀",x=4.15,y=-2.5*0.85,size = 16, family = "Arial Unicode MS") +
+  scale_y_continuous(expand=c(0,0),limits=c(-3,1.5),breaks=seq(-3,1.5,0.5)) +
+  scale_x_discrete() +
+  geom_hline(yintercept=0,linetype="dashed",size=1) +
+  ylab("Log-transformed RSS") +
   theme_bw() + 
   theme(    axis.title.x = element_blank(),
             axis.title.y = element_text(family="serif", margin = margin(t = 0, r = 5, b = 0, l = 0), face = "bold", size=14, color="black", vjust=1),
@@ -1252,5 +1258,6 @@ female_rss_summary_from_confint %>%
 print(female_rss_summary)
 
 #create combined plots for male/female SSF
-Fig4_SSF_all_sexes<-all.features.female.plot+all.features.male.plot
+Fig4_SSF_all_sexes <- all.features.female.plot + all.features.male.plot
 print(Fig4_SSF_all_sexes)
+
